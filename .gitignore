@@ -4,3 +4,5 @@
 # MLFlow
 mlartifacts/
 mlruns/
+
+data/
