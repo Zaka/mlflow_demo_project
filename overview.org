@@ -1,0 +1,289 @@
+# TILTLE: Project: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
+
+* Scope & Success Criteria
+
+**Goal:** Train a robust tabular classifier (Adult/Census Income), track everything
+with MLflow, register the best model, explain it with SHAP, and serve it via
+FastAPI.
+
+Done when: MLflow UI shows reproducible runs with metrics/artifacts.
+
+Best model is in the Model Registry.
+
+SHAP plots are logged as artifacts.
+
+A FastAPI /predict endpoint returns probabilities and top feature attributions
+per prediction.
+
+* Repo Structure (no code, just create files)
+
+- README.md — how to run, screenshots of MLflow UI.
+- requirements.txt / pyproject.toml — pin versions you choose.
+- conda.yaml (optional).
+- Makefile (or simple bash scripts) — shortcuts for train, tune, serve, test.
+- src/
+  - data.py — fetch & split dataset (train/val/test).
+  - preprocess.py — scikit-learn transformers for numeric/categorical columns.
+  - models.py — factory for XGBoost/LightGBM with sensible defaults.
+  - metrics.py — compute and log metrics + confusion matrix artifact.
+  - train.py — single-run training pipeline with MLflow logging + registry.
+  - tune.py — hyperparam search (e.g., Hyperopt) with nested runs.
+  - explain.py — SHAP computation (global + per-sample) and artifact logging.
+  - infer.py — load model from registry and score a dataframe/snippet.
+- service/
+  - app.py — FastAPI app that loads latest Production model via MLflow.
+  - schemas.py — request/response pydantic schemas.
+  - startup.py — model load on startup, feature order, preprocessing checks.
+  - examples/ — sample JSON requests.
+- config/
+  - experiment.yaml — experiment name, seed, split sizes, chosen metrics.
+  - xgb.yaml, lgbm.yaml — base hyperparams + search ranges.
+- mlruns/ — auto-created by MLflow locally.
+- tests/
+  - Unit tests for preprocessing, metrics, explainability, and API.
+
+* Data & Splits
+
+- Dataset: OpenML “adult” (Census Income). Use sklearn.datasets.fetch_openml(..., as_frame=True).
+
+Target: class mapped to binary (>50K → 1, else 0).
+
+Splits:
+
+Stratified Train/Val/Test (e.g., 60/20/20).
+
+Fix random_state for reproducibility.
+
+Column strategy:
+
+Categorical: one-hot with handle_unknown="ignore".
+
+Numeric: median imputation.
+
+Data contract: Save list of feature names and transforms as an artifact for later inference compatibility.
+
+* Experiment Tracking (MLflow Basics)
+
+Tracking URI: local file store by default; param via CLI flag for remote.
+
+Experiment name: adult-income.
+
+For each run, log:
+
+Params: model type, seed, preprocessing choices, model hyperparams.
+
+Metrics: ROC AUC (primary), F1, precision, recall, accuracy.
+
+Artifacts: confusion matrix image, feature list JSON, preprocessing summary, SHAP plots (later).
+
+Model: log the full sklearn Pipeline (preprocess + estimator) so inference uses identical transform.
+
+Signature & Example: enable autologging to capture model input schema.
+
+* Baseline Training Workflow
+
+Pipeline: ColumnTransformer (categoricals + numerics) → XGBClassifier or LGBMClassifier.
+
+Validation: use Val set for early checks; Test set used once per run at the end for final metrics.
+
+MLflow run structure:
+
+Start run (name includes model type + timestamp).
+
+Fit pipeline on Train (optionally pass Val as eval_set for tree boosters).
+
+Predict on Test, compute metrics, log them.
+
+Log artifacts (confusion matrix, feature list).
+
+Log and (optionally) register the model with a registry name (e.g., AdultIncomeClassifier).
+
+* Model Comparison & Selection
+
+Two baselines: XGBoost and LightGBM with conservative defaults.
+
+Compare in MLflow UI: sort by ROC AUC; check secondary metrics and overfitting signs.
+
+Promote best run:
+
+Register the model if not already.
+
+Transition the best version to “Staging” then “Production” (manual or via CLI).
+
+* Hyperparameter Tuning (Optional but Recommended)
+
+Search tool: Hyperopt (TPE).
+
+Search spaces (examples to encode yourself):
+
+XGB: n_estimators, max_depth, learning_rate, subsample, colsample_bytree, reg_lambda.
+
+LGBM: analogous (num_leaves, min_child_samples, etc.).
+
+Protocol:
+
+Outer parent run “tuning”, each trial as a nested run.
+
+Evaluate on Val only; keep Test for final evaluation of top config.
+
+Persist the best config and re-train once on Train+Val, then score on Test; register that final model.
+
+* Explainability with SHAP
+
+Objective: Log both global and local explanations as MLflow artifacts.
+
+Why: Auditability and debugging; later surface top attributions via API.
+
+Plan:
+
+Background data: Use a representative subset of transformed Train rows (post-preprocessing).
+
+Explainer choice: TreeExplainer for tree models (works well with XGB/LGBM).
+
+Global artifacts:
+
+Feature importance (mean |SHAP| per feature).
+
+Summary plot (beeswarm) for a sample of Validation/Test rows.
+
+Dependence plots for top K features (optional).
+
+Local artifacts:
+
+For N sample predictions (e.g., 50), store per-row top +/− contributions as a compact JSON/CSV.
+
+Metadata consistency: Log the mapping from one-hot columns back to original features to keep explanations human-readable.
+
+Performance note: Compute SHAP on a subset to keep runtime reasonable; document the sample size choice.
+
+* Inference Tooling (CLI)
+
+infer.py goals:
+
+Load model via models:/<name>/Production.
+
+Accept a small batch of raw rows (e.g., from a CSV path or inline rows).
+
+Return probabilities and predicted labels; optionally attach top 3 SHAP attributions if requested.
+
+Artifacts used: feature list, preprocessing summary, category levels (if you choose to log them) to validate input schema.
+
+* FastAPI Service
+
+App responsibilities:
+
+Load the latest Production model on startup.
+
+Validate inputs with Pydantic (types match training schema; categorical values as strings).
+
+Transform inputs via the logged preprocessing (already inside the sklearn Pipeline).
+
+Endpoints:
+
+GET /health — quick readiness check.
+
+POST /predict — accepts a list of records; returns:
+
+proba (float), label (int), and optional explanations (top K features with SHAP values and signs).
+
+GET /model-info — model name, version, run_id, metrics snapshot (pulled from MLflow).
+
+Explainability in API:
+
+On each request (or behind a query flag), compute per-row SHAP values using the loaded booster and a cached background set.
+
+Return only the top K absolute attributions per row for payload efficiency.
+
+Operational details:
+
+Input schema versioning: include a schema_version in responses; validate on request.
+
+Error handling: return structured errors for schema mismatches or unseen columns.
+
+Config via env vars: tracking URI, model name, attributions flag, top-K, background size.
+
+Packaging & Run:
+
+Uvicorn server script.
+
+Minimal Dockerfile (optional) and a short run command in README.
+
+Security: basic request size limits and simple rate limiting guidance.
+
+* Testing
+
+Unit tests:
+
+Preprocessing: unknown category handling, missing values.
+
+Metrics: thresholding and confusion matrix shape.
+
+SHAP: explainer initializes; outputs match feature dimensions.
+
+API: schema validation, happy path, and bad inputs.
+
+Integration tests:
+
+Full run logs expected params/metrics.
+
+Loading a Production model and scoring a few records.
+
+Smoke tests:
+
+make serve then curl example request returns 200 with probabilities.
+
+* MLflow Model Registry Workflow
+
+Naming: AdultIncomeClassifier.
+
+Stages: None → Staging → Production.
+
+Transition policy:
+
+Promote only models with ROC AUC ≥ baseline + δ on Test and no regression in F1.
+
+Record decision notes in run tags (who/why).
+
+Rollback: Keep previous Production version ID handy; document a one-command rollback.
+
+* Documentation & Developer Experience
+
+README sections:
+
+Setup (env, MLflow UI), Train, Compare, Tune, Register, Explain, Serve.
+
+Screenshots: MLflow runs table, artifacts pane with SHAP plots.
+
+Example curl requests and responses (redacted of actual values).
+
+Make targets (examples to implement):
+
+make env, make train-xgb, make train-lgbm, make tune, make explain, make serve, make test.
+
+Config-driven: keep knobs (splits, seeds, hyperparams, SHAP sample sizes) in YAML so runs are reproducible.
+
+* Stretch Ideas (after core is done)
+
+Add CatBoost baseline for comparison.
+
+Calibrate probabilities (Platt/Isotonic) and log calibration curves.
+
+Add drift monitors: log feature distributions and a simple PSI metric as artifacts.
+
+Add batch scoring CLI that writes predictions + attributions to parquet.
+
+* Build Order (Milestones)
+
+M1: Data load + preprocessing; single baseline run with MLflow logging.
+
+M2: Second model (XGB vs LGBM), compare in MLflow; pick a winner.
+
+M3: Register best model; add clean Test evaluation artifacts.
+
+M4: SHAP integration; global & local artifacts in MLflow.
+
+M5: CLI inference that loads from registry.
+
+M6: FastAPI service with /predict and optional per-request SHAP.
+
+M7: Tests, docs, and optional Dockerization.
