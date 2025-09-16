@@ -2,7 +2,8 @@ import os
 import pandas as pd
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score
+from sklearn.metrics import recall_score, f1_score, roc_auc_score
 
 import mlflow
 from mlflow.models import infer_signature
@@ -18,23 +19,24 @@ y = df["class"]
 X = df[[col for col in df.columns if col != "class"]]
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.33, random_state=RANDOM_STATE,
-    stratify=y
+    X, y, test_size=0.33, random_state=RANDOM_STATE, stratify=y
 )
 
 # Define the model hyperparameters
 params = {
-    'n_estimators': 2,
-    'max_depth': 2,
-    'learning_rate': 1,
-    'random_state' : RANDOM_STATE,
-    'objective': 'binary:logistic',
-    'eval_metric': 'logloss',
+    "n_estimators": 200,  # Few hundreds
+    "max_depth": 2,
+    "learning_rate": 0.1,  # 0.05-0.3
+    "tree_method": "hist",
+    "device": "cuda",
+    "random_state": RANDOM_STATE,
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",
 }
 
 bst = XGBClassifier(**params)
 
-bst.fit(X_train, y_train)
+bst.fit(X_train, y_train, verbose=True)
 
 y_pred = bst.predict(X_test)
 
@@ -42,6 +44,7 @@ accuracy = accuracy_score(y_test, y_pred)
 precision = precision_score(y_test, y_pred)
 recall = recall_score(y_test, y_pred)
 f1 = f1_score(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_pred)
 
 # Configure MLFlow
 mlflow.set_tracking_uri(uri="http://127.0.0.1:8082")
@@ -54,11 +57,15 @@ with mlflow.start_run():
     # Log the hyperparameters
     mlflow.log_params(params)
 
-    # Log the loss metrics
-    mlflow.log_metric("accuracy", accuracy)
-    mlflow.log_metric("precision", precision)
-    mlflow.log_metric("recall", recall)
-    mlflow.log_metric("f1", f1)
+    mlflow.log_metrics(
+        {
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "roc_auc": roc_auc,
+        }
+    )
 
     # Infer the model signature
     signature = infer_signature(X_train, bst.predict(X_train))
@@ -69,7 +76,7 @@ with mlflow.start_run():
         name="adult_income",
         signature=signature,
         input_example=X_train,
-        registered_model_name="tracking-quickstart",
+        registered_model_name="xgboost",
     )
 
     # Set a tag that we can use to remind ourselves what this model was for
