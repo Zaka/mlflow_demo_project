@@ -2,8 +2,10 @@ import os
 import pandas as pd
 
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.pipeline import Pipeline as SKPipeline
+
+# from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score
@@ -13,6 +15,7 @@ import mlflow
 from mlflow.models import infer_signature
 
 from xgboost import XGBClassifier
+from xgboost.callback import EarlyStopping
 
 # SEEDS
 RANDOM_STATE = 42
@@ -35,7 +38,7 @@ def main():
         y_train,
         test_size=(1 - TEST_SIZE) * (VALID_SIZE / (1 - TEST_SIZE)),
         random_state=RANDOM_STATE,
-        stratify=y_train
+        stratify=y_train,
     )  # 0.8 x 0.25 = 0.2
 
     numeric_features = [
@@ -46,10 +49,9 @@ def main():
         "hours-per-week",
     ]
 
-    numeric_transformer = Pipeline(
+    numeric_transformer = SKPipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
         ]
     )
 
@@ -64,7 +66,7 @@ def main():
         "native-country",
     ]
 
-    categorical_transformer = Pipeline(
+    categorical_transformer = SKPipeline(
         steps=[("encoder", OneHotEncoder(handle_unknown="ignore"))]
     )
 
@@ -76,31 +78,60 @@ def main():
         remainder="passthrough",
     )
 
+    # In a scikit-learn Pipeline, xgb__eval_set is passed straight to 
+    # XGBClassifier.fit without going through your preprocessor.
+
+    # So your model trains on OHE-transformed features but validates 
+    # on raw features → mismatch → headaches.
+
+    # The clean pattern is: 
+    # - fit the preprocessor first
+    # - transform train/val
+    # - then fit XGBoost with callbacks. 
+    # - After training, wrap the fitted pieces back into a pipeline so 
+    # your saved model still does end-to-end preprocessing.
+
+    preprocessor.fit(X_train, y_train)
+
+    X_train_tr = preprocessor.transform(X_train)
+    X_val_tr = preprocessor.transform(X_val)
+    X_test_tr = preprocessor.transform(X_test)
+
+    early_stop = EarlyStopping(rounds=50, save_best=True, maximize=False)
+
     # Define the model hyperparameters
     params = {
         "n_estimators": 500,  # Few hundreds
         "max_depth": 16,
         "learning_rate": 0.05,  # 0.05-0.3
         "tree_method": "hist",
-        "device": "cuda",
+        "device": "cpu",
         "random_state": RANDOM_STATE,
         "objective": "binary:logistic",
         "eval_metric": "logloss",
+        "early_stopping_rounds": 50,
+        "callbacks": [early_stop],
     }
 
-    clf = Pipeline(
-        steps=[("preprocessor", preprocessor), ("classifier", XGBClassifier(**params))]
+    xgb = XGBClassifier(**params)
+
+    xgb.fit(
+        X_train_tr,
+        y_train,
+        eval_set=[(X_val_tr, y_val)],
+        verbose=True,
     )
 
-    clf.fit(X_train, y_train, classifier__verbose=True)
-    
-    y_pred = clf.predict(X_test)
+    y_pred = xgb.predict(X_test_tr)
+    y_proba = xgb.predict_proba(X_test_tr)[:, 1]
+
+    clf = SKPipeline(steps=[("preprocessor", preprocessor), ("xgb", xgb)])
 
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
     recall = recall_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
-    roc_auc = roc_auc_score(y_test, y_pred)
+    roc_auc = roc_auc_score(y_test, y_proba)
 
     # Configure MLFlow
     mlflow.set_tracking_uri(uri="http://127.0.0.1:8082")
@@ -122,10 +153,6 @@ def main():
                 "roc_auc": roc_auc,
             }
         )
-
-        # print(
-        #     f'type(clf.named_steps["preprocessor"].get_feature_names_out().tolist()) : {type(clf.named_steps["preprocessor"].get_feature_names_out().tolist())}'
-        # )
 
         features_dict = {
             "run_id": run.info.run_id,
