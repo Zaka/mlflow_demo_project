@@ -11,6 +11,7 @@ df["class"] = df["class"].map({"<=50K": 0, ">50K": 1})
 
 # Create one hot encoding for workclass
 
+# Drop education-num because it is a numerical representation of education.
 new_columns = [col for col in df.columns if col != "education-num"]
 df = df[new_columns]
 
