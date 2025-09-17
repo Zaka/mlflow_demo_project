@@ -1,8 +1,7 @@
 import os
 from sklearn.datasets import fetch_openml
-import pandas as pd
 
-adult = fetch_openml("adult", version=2)
+adult = fetch_openml("adult", version=2, as_frame=True)
 df = adult.frame
 
 # Create the output class
