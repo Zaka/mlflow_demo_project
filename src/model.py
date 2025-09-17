@@ -16,6 +16,8 @@ from xgboost import XGBClassifier
 
 # SEEDS
 RANDOM_STATE = 42
+TEST_SIZE = 0.2
+VALID_SIZE = 0.2
 
 
 def main():
@@ -25,8 +27,16 @@ def main():
     X = df[[col for col in df.columns if col != "class"]]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.33, random_state=RANDOM_STATE, stratify=y
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
     )
+
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train,
+        y_train,
+        test_size=(1 - TEST_SIZE) * (VALID_SIZE / (1 - TEST_SIZE)),
+        random_state=RANDOM_STATE,
+        stratify=y_train
+    )  # 0.8 x 0.25 = 0.2
 
     numeric_features = [
         "age",
@@ -63,7 +73,7 @@ def main():
             ("num", numeric_transformer, numeric_features),
             ("cat", categorical_transformer, categorical_features),
         ],
-        remainder='passthrough'
+        remainder="passthrough",
     )
 
     # Define the model hyperparameters
@@ -82,12 +92,8 @@ def main():
         steps=[("preprocessor", preprocessor), ("classifier", XGBClassifier(**params))]
     )
 
-    # bst = XGBClassifier(**params)
-
-    # bst.fit(X_train, y_train, verbose=True)
     clf.fit(X_train, y_train, classifier__verbose=True)
-
-    # y_pred = bst.predict(X_test)
+    
     y_pred = clf.predict(X_test)
 
     accuracy = accuracy_score(y_test, y_pred)
@@ -103,7 +109,7 @@ def main():
     mlflow.set_experiment("Adult income classifier")
 
     # Start an MLflow run
-    with mlflow.start_run():
+    with mlflow.start_run() as run:
         # Log the hyperparameters
         mlflow.log_params(params)
 
@@ -116,6 +122,24 @@ def main():
                 "roc_auc": roc_auc,
             }
         )
+
+        # print(
+        #     f'type(clf.named_steps["preprocessor"].get_feature_names_out().tolist()) : {type(clf.named_steps["preprocessor"].get_feature_names_out().tolist())}'
+        # )
+
+        features_dict = {
+            "run_id": run.info.run_id,
+            "raw_columns": list(df.columns),
+            "expanded_features": clf.named_steps["preprocessor"]
+            .get_feature_names_out()
+            .tolist(),
+            "readable_features": [
+                f.replace("num__", "").replace("cat__", "")
+                for f in clf.named_steps["preprocessor"].get_feature_names_out()
+            ],
+        }
+
+        mlflow.log_dict(features_dict, "feature_names.json")
 
         # Infer the model signature
         signature = infer_signature(X_train, clf.predict(X_train))
