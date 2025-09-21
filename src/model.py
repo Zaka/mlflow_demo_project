@@ -1,9 +1,13 @@
 import os
+from datetime import datetime
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline as SKPipeline
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -78,17 +82,17 @@ def main():
         remainder="passthrough",
     )
 
-    # In a scikit-learn Pipeline, xgb__eval_set is passed straight to 
+    # In a scikit-learn Pipeline, xgb__eval_set is passed straight to
     # XGBClassifier.fit without going through your preprocessor.
 
-    # So your model trains on OHE-transformed features but validates 
+    # So your model trains on OHE-transformed features but validates
     # on raw features → mismatch → headaches.
 
-    # The clean pattern is: 
+    # The clean pattern is:
     # - fit the preprocessor first
     # - transform train/val
-    # - then fit XGBoost with callbacks. 
-    # - After training, wrap the fitted pieces back into a pipeline so 
+    # - then fit XGBoost with callbacks.
+    # - After training, wrap the fitted pieces back into a pipeline so
     # your saved model still does end-to-end preprocessing.
 
     preprocessor.fit(X_train, y_train)
@@ -133,14 +137,42 @@ def main():
     f1 = f1_score(y_test, y_pred)
     roc_auc = roc_auc_score(y_test, y_proba)
 
+    # Labels for confusion matrix
+    labels = getattr(clf, "classes_", np.unique(y_test))
+    cm = confusion_matrix(y_test, y_pred, labels=labels)
+
     # Configure MLFlow
     mlflow.set_tracking_uri(uri="http://127.0.0.1:8082")
 
     # Create a new MLflow Experiment
-    mlflow.set_experiment("Adult income classifier")
+    mlflow.set_experiment("adult-income")
+
+    now_iso = datetime.now().replace(microsecond=0).isoformat()
 
     # Start an MLflow run
     with mlflow.start_run() as run:
+        # Log date in ISO format
+        mlflow.log_param("run_date", now_iso)
+
+        # Log the confusion matrix as a figure
+        fig, ax = plt.subplots(figsize=(5, 5), dpi=120)
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+        disp.plot(ax=ax, colorbar=False, values_format="d")
+        ax.set_title("Confusion Matrix (Test)")
+        plt.tight_layout()
+        mlflow.log_figure(fig, "plots/confusion_matrix_test.png")
+        plt.close(fig)
+
+        # Optionally log a normalized version too
+        cm_norm = confusion_matrix(y_test, y_pred, labels=labels, normalize="true")
+        fig2, ax2 = plt.subplots(figsize=(5, 5), dpi=120)
+        disp2 = ConfusionMatrixDisplay(confusion_matrix=cm_norm, display_labels=labels)
+        disp2.plot(ax=ax2, colorbar=True, values_format=".2f")
+        ax2.set_title("Confusion Matrix (Normalized, Test)")
+        plt.tight_layout()
+        mlflow.log_figure(fig2, "plots/confusion_matrix_test_normalized.png")
+        plt.close(fig2)
+
         # Log the hyperparameters
         mlflow.log_params(params)
 
@@ -167,9 +199,17 @@ def main():
         }
 
         mlflow.log_dict(features_dict, "feature_names.json")
+        mlflow.log_dict(
+            {
+                "labels": list(map(str, labels)),
+                "matrix": cm.tolist(),
+                "matrix_normalized": cm_norm.tolist(),
+            },
+            "artifacts/confusion_matrix.json",
+        )
 
         # Infer the model signature
-        signature = infer_signature(X_train, clf.predict(X_train))
+        signature = infer_signature(X_train, clf.predict_proba(X_train))
 
         # Log the model, which inherits the parameters and metric
         model_info = mlflow.sklearn.log_model(
