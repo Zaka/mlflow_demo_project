@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+import yaml
+
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline as SKPipeline
@@ -22,26 +24,39 @@ from xgboost import XGBClassifier
 from xgboost.callback import EarlyStopping
 
 # SEEDS
-RANDOM_STATE = 42
-TEST_SIZE = 0.2
-VALID_SIZE = 0.2
+# RANDOM_STATE = 42
+# TEST_SIZE = 0.2
+# VALID_SIZE = 0.2
+
+
+def load_config(path="config.yaml"):
+    with open(path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    return cfg
 
 
 def main():
+    cfg = load_config("config.yaml")
+
+    seed = cfg['seed']
+
     df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
 
     y = df["class"]
     X = df[[col for col in df.columns if col != "class"]]
+    test_size = cfg["data"]["test_size"]
+    val_size = cfg["data"]["val_size"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
+        X, y, test_size=test_size, random_state=seed, stratify=y
     )
 
     X_train, X_val, y_train, y_val = train_test_split(
         X_train,
         y_train,
-        test_size=(1 - TEST_SIZE) * (VALID_SIZE / (1 - TEST_SIZE)),
-        random_state=RANDOM_STATE,
+        test_size=(1 - test_size) * (val_size / (1 - test_size)),
+        random_state=seed,
         stratify=y_train,
     )  # 0.8 x 0.25 = 0.2
 
@@ -104,16 +119,17 @@ def main():
     early_stop = EarlyStopping(rounds=50, save_best=True, maximize=False)
 
     # Define the model hyperparameters
+    model_cfg = cfg["model"]
     params = {
-        "n_estimators": 500,  # Few hundreds
-        "max_depth": 16,
-        "learning_rate": 0.05,  # 0.05-0.3
+        "n_estimators": model_cfg["n_estimators"],
+        "max_depth": model_cfg["max_depth"],
+        "learning_rate": model_cfg["learning_rate"],
         "tree_method": "hist",
         "device": "cpu",
-        "random_state": RANDOM_STATE,
+        "random_state": seed,
         "objective": "binary:logistic",
         "eval_metric": "logloss",
-        "early_stopping_rounds": 50,
+        "early_stopping_rounds": model_cfg["early_stopping_rounds"],
         "callbacks": [early_stop],
     }
 
@@ -141,11 +157,13 @@ def main():
     labels = getattr(clf, "classes_", np.unique(y_test))
     cm = confusion_matrix(y_test, y_pred, labels=labels)
 
+    mlflow_cfg = cfg["mlflow"]
+
     # Configure MLFlow
-    mlflow.set_tracking_uri(uri="http://127.0.0.1:8082")
+    mlflow.set_tracking_uri(uri=mlflow_cfg["tracking_uri"])
 
     # Create a new MLflow Experiment
-    mlflow.set_experiment("adult-income")
+    mlflow.set_experiment(mlflow_cfg["experiment_name"])
 
     now_iso = datetime.now().replace(microsecond=0).isoformat()
 
@@ -208,6 +226,8 @@ def main():
             "artifacts/confusion_matrix.json",
         )
 
+        mlflow.log_dict(cfg, "config_used.yaml")
+
         # Infer the model signature
         signature = infer_signature(X_train, clf.predict_proba(X_train))
 
@@ -225,6 +245,9 @@ def main():
             model_info.model_id,
             {"Training Info": "Basic XGBoost classifier for adult income"},
         )
+
+        with open("README.txt", "r") as f:
+            mlflow.log_text(f.read(), "README.txt")
 
 
 if __name__ == "__main__":
