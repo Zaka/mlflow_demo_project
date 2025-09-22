@@ -1,3 +1,4 @@
+import argparse
 import os
 from datetime import datetime
 import pandas as pd
@@ -23,11 +24,6 @@ from mlflow.models import infer_signature
 from xgboost import XGBClassifier
 from xgboost.callback import EarlyStopping
 
-# SEEDS
-# RANDOM_STATE = 42
-# TEST_SIZE = 0.2
-# VALID_SIZE = 0.2
-
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
@@ -37,11 +33,22 @@ def load_config(path="config.yaml"):
 
 
 def main():
-    cfg = load_config("config.yaml")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/config_xgboost.yaml")
+    args = parser.parse_args()
 
-    seed = cfg['seed']
+    cfg = load_config(args.config)
 
-    df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
+    seed = cfg["seed"]
+
+    try:
+        # df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
+        df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
+    except FileNotFoundError as e:
+        from src.data.create_dataset import load_dataset
+
+        load_dataset()
+        df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
 
     y = df["class"]
     X = df[[col for col in df.columns if col != "class"]]
@@ -226,6 +233,7 @@ def main():
             "artifacts/confusion_matrix.json",
         )
 
+        mlflow.log_artifact(args.config)
         mlflow.log_dict(cfg, "config_used.yaml")
 
         # Infer the model signature

@@ -6,3 +6,5 @@ mlartifacts/
 mlruns/
 
 /data/
+
+__pycache__

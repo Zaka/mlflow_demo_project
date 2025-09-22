@@ -1,20 +1,22 @@
 import os
 from sklearn.datasets import fetch_openml
 
-adult = fetch_openml("adult", version=2, as_frame=True)
-df = adult.frame
+def load_dataset():
+    adult = fetch_openml("adult", version=2, as_frame=True)
+    df = adult.frame
 
-# Create the output class
+    # Create the output class
 
-# Output class is 'class' column
-df["class"] = df["class"].map({"<=50K": 0, ">50K": 1})
 
-# Create one hot encoding for workclass
+    # Output class is 'class' column
+    df["class"] = df["class"].map({"<=50K": 0, ">50K": 1})
 
-# Drop education-num because it is a numerical representation of education.
-new_columns = [col for col in df.columns if col != "education-num"]
-df = df[new_columns]
+    # Create one hot encoding for workclass
 
-# Store pickled dataset
+    # Drop education-num because it is a numerical representation of education.
+    new_columns = [col for col in df.columns if col != "education-num"]
+    df = df[new_columns]
 
-df.to_pickle(os.path.join('.', 'data', 'processed', 'dataset.pkl'))
+    # Store pickled dataset
+
+    df.to_pickle(os.path.join('.', 'data', 'processed', 'dataset.pkl'))
