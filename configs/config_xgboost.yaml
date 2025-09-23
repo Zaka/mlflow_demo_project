@@ -5,12 +5,12 @@ data:
   val_size: 0.2
 
 model:
-  type: xgboost
+  type: adult-income-xgboost
   max_depth: 6
   learning_rate: 0.05
   n_estimators: 500
   early_stopping_rounds: 50
-
+  objective: binary:logistic
 mlflow:
   experiment_name: adult-income
   tracking_uri: http://127.0.0.1:8082

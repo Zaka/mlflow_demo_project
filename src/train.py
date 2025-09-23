@@ -1,6 +1,6 @@
 import argparse
 import os
-from datetime import datetime
+import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,12 +24,83 @@ from mlflow.models import infer_signature
 from xgboost import XGBClassifier
 from xgboost.callback import EarlyStopping
 
+from lightgbm import LGBMClassifier, early_stopping
+
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
         cfg = yaml.safe_load(f)
 
     return cfg
+
+
+def load_dataset():
+
+    path = os.path.join(".", "data", "processed", "dataset.pkl")
+
+    try:
+        df = pd.read_pickle(path)
+    except FileNotFoundError:
+        from src.data.create_dataset import load_dataset
+
+        load_dataset()
+        df = pd.read_pickle(path)
+
+    return df
+
+
+def partition_dataset(X, y, test_size, val_size, seed):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=seed, stratify=y
+    )
+
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train,
+        y_train,
+        test_size=(1 - test_size) * (val_size / (1 - test_size)),
+        random_state=seed,
+        stratify=y_train,
+    )
+
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
+def create_conf_matrix_fig(y_test, y_pred, labels, mlflow, normalize=None):
+    # Log the confusion matrix as a figure
+    cm = confusion_matrix(y_test, y_pred, labels=labels, normalize=normalize)
+    fig, ax = plt.subplots(figsize=(5, 5), dpi=120)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+
+    if normalize is None:
+        value_format = "d"
+        title = "Confusion Matrix (Test)"
+        fig_log_name = "plots/confusion_matrix_test.png"
+    elif normalize == "true":
+        value_format = ".2f"
+        title = "Confusion Matrix (Normalized, Test)"
+        fig_log_name = "plots/confusion_matrix_test_normalized.png"
+
+    disp.plot(ax=ax, colorbar=False, values_format=value_format)
+    ax.set_title(title)
+    plt.tight_layout()
+    mlflow.log_figure(fig, fig_log_name)
+    plt.close(fig)
+
+    return cm
+
+
+def log_conf_matrix_figs(y_test, y_pred, labels, mlflow):
+    cm = create_conf_matrix_fig(y_test, y_pred, labels, mlflow)
+    cm_norm = create_conf_matrix_fig(y_test, y_pred, labels, mlflow, normalize="true")
+
+    mlflow.log_dict(
+        {
+            "labels": list(map(str, labels)),
+            "matrix": cm.tolist(),
+            "matrix_normalized": cm_norm.tolist(),
+        },
+        "artifacts/confusion_matrix.json",
+    )
 
 
 def main():
@@ -41,31 +112,20 @@ def main():
 
     seed = cfg["seed"]
 
-    try:
-        # df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
-        df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
-    except FileNotFoundError as e:
-        from src.data.create_dataset import load_dataset
+    random.seed(seed)
+    np.random.seed(seed)
 
-        load_dataset()
-        df = pd.read_pickle(os.path.join(".", "data", "processed", "dataset.pkl"))
-
-    y = df["class"]
-    X = df[[col for col in df.columns if col != "class"]]
     test_size = cfg["data"]["test_size"]
     val_size = cfg["data"]["val_size"]
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=seed, stratify=y
-    )
+    dataset = load_dataset()
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_train,
-        y_train,
-        test_size=(1 - test_size) * (val_size / (1 - test_size)),
-        random_state=seed,
-        stratify=y_train,
-    )  # 0.8 x 0.25 = 0.2
+    y = dataset["class"]
+    X = dataset[[col for col in dataset.columns if col != "class"]]
+
+    X_train, X_val, X_test, y_train, y_val, y_test = partition_dataset(
+        X, y, test_size, val_size, seed
+    )
 
     numeric_features = [
         "age",
@@ -93,7 +153,7 @@ def main():
     ]
 
     categorical_transformer = SKPipeline(
-        steps=[("encoder", OneHotEncoder(handle_unknown="ignore"))]
+        steps=[("encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore"))]
     )
 
     preprocessor = ColumnTransformer(
@@ -117,42 +177,58 @@ def main():
     # - After training, wrap the fitted pieces back into a pipeline so
     # your saved model still does end-to-end preprocessing.
 
+    preprocessor.set_output(transform="pandas")
     preprocessor.fit(X_train, y_train)
 
     X_train_tr = preprocessor.transform(X_train)
     X_val_tr = preprocessor.transform(X_val)
     X_test_tr = preprocessor.transform(X_test)
 
-    early_stop = EarlyStopping(rounds=50, save_best=True, maximize=False)
-
     # Define the model hyperparameters
     model_cfg = cfg["model"]
-    params = {
-        "n_estimators": model_cfg["n_estimators"],
-        "max_depth": model_cfg["max_depth"],
-        "learning_rate": model_cfg["learning_rate"],
-        "tree_method": "hist",
-        "device": "cpu",
-        "random_state": seed,
-        "objective": "binary:logistic",
-        "eval_metric": "logloss",
-        "early_stopping_rounds": model_cfg["early_stopping_rounds"],
-        "callbacks": [early_stop],
-    }
 
-    xgb = XGBClassifier(**params)
+    if model_cfg["type"] == "xgboost":
+        early_stop = EarlyStopping(
+            rounds=model_cfg["early_stopping_rounds"], save_best=True, maximize=False
+        )
 
-    xgb.fit(
-        X_train_tr,
-        y_train,
-        eval_set=[(X_val_tr, y_val)],
-        verbose=True,
+        params = {
+            "n_estimators": model_cfg["n_estimators"],
+            "max_depth": model_cfg["max_depth"],
+            "learning_rate": model_cfg["learning_rate"],
+            "tree_method": "hist",
+            "device": "cpu",
+            "random_state": seed,
+            "objective": model_cfg["objective"],
+            "eval_metric": "logloss",
+        }
+
+        booster = XGBClassifier(**params)
+    else:  # LightGBM
+        early_stop = early_stopping(model_cfg["stopping_rounds"], verbose=True)
+
+        params = {
+            "n_estimators": model_cfg["n_estimators"],
+            "num_leaves": model_cfg["num_leaves"],  # ~31-63
+            "min_child_samples": model_cfg["min_child_samples"],  # ~20-100
+            "min_split_gain": model_cfg["min_split_gain"],
+            "feature_pre_filter": model_cfg["feature_pre_filter"],
+            "learning_rate": model_cfg["learning_rate"],
+            "random_state": seed,
+            "verbose": model_cfg["verbose"],
+            "objective": model_cfg["objective"],
+        }
+
+        booster = LGBMClassifier(**params)
+
+    booster.fit(
+        X_train_tr, y_train, eval_set=[(X_val_tr, y_val)], callbacks=[early_stop]
     )
 
-    y_pred = xgb.predict(X_test_tr)
-    y_proba = xgb.predict_proba(X_test_tr)[:, 1]
+    y_pred = booster.predict(X_test_tr)
+    y_proba = booster.predict_proba(X_test_tr)[:, 1]
 
-    clf = SKPipeline(steps=[("preprocessor", preprocessor), ("xgb", xgb)])
+    clf = SKPipeline(steps=[("preprocessor", preprocessor), ("booster", booster)])
 
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
@@ -161,8 +237,7 @@ def main():
     roc_auc = roc_auc_score(y_test, y_proba)
 
     # Labels for confusion matrix
-    labels = getattr(clf, "classes_", np.unique(y_test))
-    cm = confusion_matrix(y_test, y_pred, labels=labels)
+    labels = [0, 1]
 
     mlflow_cfg = cfg["mlflow"]
 
@@ -172,34 +247,38 @@ def main():
     # Create a new MLflow Experiment
     mlflow.set_experiment(mlflow_cfg["experiment_name"])
 
-    now_iso = datetime.now().replace(microsecond=0).isoformat()
-
     # Start an MLflow run
     with mlflow.start_run() as run:
-        # Log date in ISO format
-        mlflow.log_param("run_date", now_iso)
+        log_conf_matrix_figs(y_test, y_pred, labels, mlflow)
 
-        # Log the confusion matrix as a figure
-        fig, ax = plt.subplots(figsize=(5, 5), dpi=120)
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
-        disp.plot(ax=ax, colorbar=False, values_format="d")
-        ax.set_title("Confusion Matrix (Test)")
-        plt.tight_layout()
-        mlflow.log_figure(fig, "plots/confusion_matrix_test.png")
-        plt.close(fig)
-
-        # Optionally log a normalized version too
-        cm_norm = confusion_matrix(y_test, y_pred, labels=labels, normalize="true")
-        fig2, ax2 = plt.subplots(figsize=(5, 5), dpi=120)
-        disp2 = ConfusionMatrixDisplay(confusion_matrix=cm_norm, display_labels=labels)
-        disp2.plot(ax=ax2, colorbar=True, values_format=".2f")
-        ax2.set_title("Confusion Matrix (Normalized, Test)")
-        plt.tight_layout()
-        mlflow.log_figure(fig2, "plots/confusion_matrix_test_normalized.png")
-        plt.close(fig2)
-
-        # Log the hyperparameters
-        mlflow.log_params(params)
+        if model_cfg["type"] == "xgboost":
+            mlflow.log_params(
+                {
+                    "n_estimators": model_cfg["n_estimators"],
+                    "max_depth": model_cfg["max_depth"],
+                    "learning_rate": model_cfg["learning_rate"],
+                    "tree_method": "hist",
+                    "device": "cpu",
+                    "random_state": seed,
+                    "objective": model_cfg["objective"],
+                    "eval_metric": "logloss",
+                }
+            )
+        else:  # LightGBM
+            mlflow.log_params(
+                {
+                    "n_estimators": model_cfg["n_estimators"],
+                    "num_leaves": model_cfg["num_leaves"],  # ~31-63
+                    "min_child_samples": model_cfg["min_child_samples"],  # ~20-100
+                    "min_split_gain": model_cfg["min_split_gain"],
+                    "feature_pre_filter": model_cfg["feature_pre_filter"],
+                    "learning_rate": model_cfg["learning_rate"],
+                    "device": "cpu",
+                    "random_state": seed,
+                    "verbose": model_cfg["verbose"],
+                    "objective": model_cfg["objective"],
+                }
+            )
 
         mlflow.log_metrics(
             {
@@ -213,7 +292,7 @@ def main():
 
         features_dict = {
             "run_id": run.info.run_id,
-            "raw_columns": list(df.columns),
+            "raw_columns": list(dataset.columns),
             "expanded_features": clf.named_steps["preprocessor"]
             .get_feature_names_out()
             .tolist(),
@@ -224,34 +303,32 @@ def main():
         }
 
         mlflow.log_dict(features_dict, "feature_names.json")
-        mlflow.log_dict(
-            {
-                "labels": list(map(str, labels)),
-                "matrix": cm.tolist(),
-                "matrix_normalized": cm_norm.tolist(),
-            },
-            "artifacts/confusion_matrix.json",
-        )
 
         mlflow.log_artifact(args.config)
         mlflow.log_dict(cfg, "config_used.yaml")
 
+        X_train_sample = X_train.head()
+
+        for col in numeric_features:
+            X_train_sample.loc[:, col] = X_train_sample[col].astype(float)
+
         # Infer the model signature
-        signature = infer_signature(X_train, clf.predict_proba(X_train))
+        signature = infer_signature(X_train_sample, clf.predict_proba(X_train_sample))
 
         # Log the model, which inherits the parameters and metric
         model_info = mlflow.sklearn.log_model(
             sk_model=clf,
             name="adult_income",
             signature=signature,
-            input_example=X_train,
-            registered_model_name="xgboost",
+            input_example=X_train.head(50),
+            registered_model_name=model_cfg["type"],
         )
 
         # Set a tag that we can use to remind ourselves what this model was for
-        mlflow.set_logged_model_tags(
+        # mlflow.set_logged_model_tags(
+        mlflow.set_tag(
             model_info.model_id,
-            {"Training Info": "Basic XGBoost classifier for adult income"},
+            {"Training Info": f"Basic {model_cfg["type"]} classifier for adult income"},
         )
 
         with open("README.txt", "r") as f:

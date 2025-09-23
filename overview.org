@@ -1,6 +1,58 @@
 # TILTLE: Project: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
 
-* Scope & Success Criteria
+* Milestones for Adult Income Project
+
+** M1 Baseline training + tracking [100%]
+   - [X] Train a single model (XGBoost)
+   - [X] Track params/metrics in MLflow
+   - [X] Evaluate on Test
+   - [X] Log artifacts (confusion matrix, config, feature names)
+
+** M2 Multi-model comparison + reproducibility [66%]
+   - [X] Add LightGBM training path
+   - [X] Global seeding (Python, NumPy, XGB/LGBM) from YAML
+   - [X] Early stopping cleanup (only one mechanism per booster)
+   - [ ] Final refit on Train+Val after early stopping (optional)
+   - [X] Confusion matrix uses explicit labels [0,1]
+   - [-] MLflow logging hygiene
+     - [X] Params only scalars/strings
+     - [ ] Registry names normalized (`adult-income-xgboost`, `adult-income-lightgbm`)
+     - [ ] Use `mlflow.set_tag` instead of `set_logged_model_tags`
+     - [X] Signature + input_example use `X_train.head(50)`
+
+** M3 Explainability [0%]
+   - [ ] Integrate SHAP
+   - [ ] Compute values on Val/Test sample
+   - [ ] Log global importance plot
+   - [ ] Log SHAP summary beeswarm
+   - [ ] Log per-sample top-K attributions
+   - [ ] Use `feature_names.json` for readable labels
+
+** M4 Serving [0%]
+   - [ ] Inference script (`infer.py`)
+     - [ ] Load latest Production model from registry
+     - [ ] Accept DataFrame or JSON snippet
+     - [ ] Return predicted probs + labels
+   - [ ] FastAPI service
+     - [ ] `/predict`: JSON list in, probs + top-K SHAP out
+     - [ ] `/model-info`: return model name, version, run_id
+     - [ ] `/health`: readiness check
+     - [ ] Input schema validated with Pydantic
+     - [ ] Model loaded once at startup
+
+** M5 Developer experience & polish [0%]
+   - [ ] Multiple configs: `xgboost`, `lightgbm`, `debug` (optional: CatBoost)
+   - [ ] README updates
+     - [ ] Document preprocessing decisions
+     - [ ] Add MLflow screenshots
+     - [ ] Add FastAPI `curl` example
+   - [ ] Artifacts
+     - [ ] SHAP plots logged in MLflow
+     - [ ] Optional: calibration curves
+
+
+* Project overview
+** Scope & Success Criteria
 
 **Goal:** Train a robust tabular classifier (Adult/Census Income), track everything
 with MLflow, register the best model, explain it with SHAP, and serve it via
@@ -15,7 +67,7 @@ SHAP plots are logged as artifacts.
 A FastAPI /predict endpoint returns probabilities and top feature attributions
 per prediction.
 
-* Repo Structure (no code, just create files)
+** Repo Structure (no code, just create files)
 
 - README.md — how to run, screenshots of MLflow UI.
 - requirements.txt / pyproject.toml — pin versions you choose.
@@ -42,7 +94,7 @@ per prediction.
 - tests/
   - Unit tests for preprocessing, metrics, explainability, and API.
 
-* Data & Splits
+** Data & Splits
 
 - Dataset: OpenML “adult” (Census Income). Use sklearn.datasets.fetch_openml(..., as_frame=True).
 
@@ -62,7 +114,7 @@ Numeric: median imputation.
 
 Data contract: Save list of feature names and transforms as an artifact for later inference compatibility.
 
-* Experiment Tracking (MLflow Basics)
+** Experiment Tracking (MLflow Basics)
 
 Tracking URI: local file store by default; param via CLI flag for remote.
 
@@ -80,7 +132,7 @@ Model: log the full sklearn Pipeline (preprocess + estimator) so inference uses 
 
 Signature & Example: enable autologging to capture model input schema.
 
-* Baseline Training Workflow
+** Baseline Training Workflow
 
 Pipeline: ColumnTransformer (categoricals + numerics) → XGBClassifier or LGBMClassifier.
 
@@ -98,7 +150,7 @@ Log artifacts (confusion matrix, feature list).
 
 Log and (optionally) register the model with a registry name (e.g., AdultIncomeClassifier).
 
-* Model Comparison & Selection
+** Model Comparison & Selection
 
 Two baselines: XGBoost and LightGBM with conservative defaults.
 
@@ -110,7 +162,7 @@ Register the model if not already.
 
 Transition the best version to “Staging” then “Production” (manual or via CLI).
 
-* Hyperparameter Tuning (Optional but Recommended)
+** Hyperparameter Tuning (Optional but Recommended)
 
 Search tool: Hyperopt (TPE).
 
@@ -128,7 +180,7 @@ Evaluate on Val only; keep Test for final evaluation of top config.
 
 Persist the best config and re-train once on Train+Val, then score on Test; register that final model.
 
-* Explainability with SHAP
+** Explainability with SHAP
 
 Objective: Log both global and local explanations as MLflow artifacts.
 
@@ -156,7 +208,7 @@ Metadata consistency: Log the mapping from one-hot columns back to original feat
 
 Performance note: Compute SHAP on a subset to keep runtime reasonable; document the sample size choice.
 
-* Inference Tooling (CLI)
+** Inference Tooling (CLI)
 
 infer.py goals:
 
@@ -168,7 +220,7 @@ Return probabilities and predicted labels; optionally attach top 3 SHAP attribut
 
 Artifacts used: feature list, preprocessing summary, category levels (if you choose to log them) to validate input schema.
 
-* FastAPI Service
+** FastAPI Service
 
 App responsibilities:
 
@@ -210,7 +262,7 @@ Minimal Dockerfile (optional) and a short run command in README.
 
 Security: basic request size limits and simple rate limiting guidance.
 
-* Testing
+** Testing
 
 Unit tests:
 
@@ -232,7 +284,7 @@ Smoke tests:
 
 make serve then curl example request returns 200 with probabilities.
 
-* MLflow Model Registry Workflow
+** MLflow Model Registry Workflow
 
 Naming: AdultIncomeClassifier.
 
@@ -246,7 +298,7 @@ Record decision notes in run tags (who/why).
 
 Rollback: Keep previous Production version ID handy; document a one-command rollback.
 
-* Documentation & Developer Experience
+** Documentation & Developer Experience
 
 README sections:
 
@@ -262,7 +314,7 @@ make env, make train-xgb, make train-lgbm, make tune, make explain, make serve, 
 
 Config-driven: keep knobs (splits, seeds, hyperparams, SHAP sample sizes) in YAML so runs are reproducible.
 
-* Stretch Ideas (after core is done)
+** Stretch Ideas (after core is done)
 
 Add CatBoost baseline for comparison.
 
@@ -272,7 +324,7 @@ Add drift monitors: log feature distributions and a simple PSI metric as artifac
 
 Add batch scoring CLI that writes predictions + attributions to parquet.
 
-* Build Order (Milestones)
+** Build Order (Milestones)
 
 M1: Data load + preprocessing; single baseline run with MLflow logging.
 
