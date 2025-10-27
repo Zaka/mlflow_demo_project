@@ -8,16 +8,16 @@
    - [X] Evaluate on Test
    - [X] Log artifacts (confusion matrix, config, feature names)
 
-** M2 Multi-model comparison + reproducibility [66%]
+** M2 Multi-model comparison + reproducibility [100%]
    - [X] Add LightGBM training path
    - [X] Global seeding (Python, NumPy, XGB/LGBM) from YAML
    - [X] Early stopping cleanup (only one mechanism per booster)
-   - [ ] Final refit on Train+Val after early stopping (optional)
+   - [X] Final refit on Train+Val after early stopping (optional)
    - [X] Confusion matrix uses explicit labels [0,1]
-   - [-] MLflow logging hygiene
+   - [X] MLflow logging hygiene
      - [X] Params only scalars/strings
-     - [ ] Registry names normalized (`adult-income-xgboost`, `adult-income-lightgbm`)
-     - [ ] Use `mlflow.set_tag` instead of `set_logged_model_tags`
+     - [X] Registry names normalized (`adult-income-xgboost`, `adult-income-lightgbm`)
+     - [X] Use `mlflow.set_tag` instead of `set_logged_model_tags`
      - [X] Signature + input_example use `X_train.head(50)`
 
 ** M3 Explainability [0%]
@@ -49,7 +49,6 @@
    - [ ] Artifacts
      - [ ] SHAP plots logged in MLflow
      - [ ] Optional: calibration curves
-
 
 * Project overview
 ** Scope & Success Criteria

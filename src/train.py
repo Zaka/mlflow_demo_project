@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 import yaml
 
+import sklearn
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline as SKPipeline
@@ -187,7 +188,7 @@ def main():
     # Define the model hyperparameters
     model_cfg = cfg["model"]
 
-    if model_cfg["type"] == "xgboost":
+    if model_cfg["type"] == "adult-income-xgboost":
         early_stop = EarlyStopping(
             rounds=model_cfg["early_stopping_rounds"], save_best=True, maximize=False
         )
@@ -201,6 +202,7 @@ def main():
             "random_state": seed,
             "objective": model_cfg["objective"],
             "eval_metric": "logloss",
+            "callbacks": [early_stop],
         }
 
         booster = XGBClassifier(**params)
@@ -217,18 +219,50 @@ def main():
             "random_state": seed,
             "verbose": model_cfg["verbose"],
             "objective": model_cfg["objective"],
+            "num_boost_round": model_cfg["num_boost_round"]
         }
 
         booster = LGBMClassifier(**params)
 
     booster.fit(
-        X_train_tr, y_train, eval_set=[(X_val_tr, y_val)], callbacks=[early_stop]
+        X_train_tr,
+        y_train,
+        eval_set=[(X_val_tr, y_val)],
     )
 
-    y_pred = booster.predict(X_test_tr)
-    y_proba = booster.predict_proba(X_test_tr)[:, 1]
+    # Refit Train + Val #############################################
+    
+    if model_cfg["type"] == "adult-income-xgboost":
+        best_iteration = booster.best_iteration
+    else: # LightGBM
+        # best_iteration = booster._best_iteration
+        best_iteration = booster.booster_.best_iteration
 
-    clf = SKPipeline(steps=[("preprocessor", preprocessor), ("booster", booster)])
+    if best_iteration is None or best_iteration < 1:
+        best_iteration = booster.n_estimators
+
+    X_train = pd.concat((X_train, X_val))
+    y_train = pd.concat((y_train, y_val))
+
+    preprocessor.fit(X_train, y_train)
+
+    X_train_tr = preprocessor.transform(X_train)
+
+    booster_refit = sklearn.base.clone(booster)
+
+    booster_refit.n_estimators = best_iteration
+    booster_refit.callbacks = None
+    
+    booster_refit.fit(X_train_tr, y_train)
+
+    clf = SKPipeline(steps=[("preprocessor", preprocessor), ("booster", booster_refit)])
+
+    y_pred = booster_refit.predict(X_test_tr)
+    y_proba = booster_refit.predict_proba(X_test_tr)[:, 1]
+    # y_pred = booster.predict(X_test_tr)
+    # y_proba = booster.predict_proba(X_test_tr)[:, 1]
+    # y_pred = clf.predict(X_test_tr)
+    # y_proba = clf.predict_proba(X_test_tr)[:, 1]
 
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
@@ -251,7 +285,7 @@ def main():
     with mlflow.start_run() as run:
         log_conf_matrix_figs(y_test, y_pred, labels, mlflow)
 
-        if model_cfg["type"] == "xgboost":
+        if model_cfg["type"] == "adult-income-xgboost":
             mlflow.log_params(
                 {
                     "n_estimators": model_cfg["n_estimators"],
@@ -269,6 +303,7 @@ def main():
                 {
                     "n_estimators": model_cfg["n_estimators"],
                     "num_leaves": model_cfg["num_leaves"],  # ~31-63
+                    "num_boost_round": model_cfg["num_boost_round"],
                     "min_child_samples": model_cfg["min_child_samples"],  # ~20-100
                     "min_split_gain": model_cfg["min_split_gain"],
                     "feature_pre_filter": model_cfg["feature_pre_filter"],
@@ -325,7 +360,6 @@ def main():
         )
 
         # Set a tag that we can use to remind ourselves what this model was for
-        # mlflow.set_logged_model_tags(
         mlflow.set_tag(
             model_info.model_id,
             {"Training Info": f"Basic {model_cfg["type"]} classifier for adult income"},

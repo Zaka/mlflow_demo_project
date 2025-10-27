@@ -1,0 +1,10 @@
+{
+    "terminal.integrated.profiles": {
+    "ProjectEnv": {
+      "path": "/bin/bash",
+      "args": ["-c", "source .venv/bin/activate && exec bash"]
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash"
+
+}

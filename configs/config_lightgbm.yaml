@@ -9,6 +9,7 @@ model:
   num_leaves: 55 # ~31-63
   min_child_samples: 50 # min_data_in_leaf: 50 # ~20-100
   min_split_gain: 0.0 # min_gain_to_split: 0.0
+  num_boost_round: 50
   feature_pre_filter: False
   learning_rate: 0.05
   n_estimators: 500
