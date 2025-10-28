@@ -1,7 +1,6 @@
 # TILTLE: Project: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
 
 * Milestones for Adult Income Project
-
 ** M1 Baseline training + tracking [100%]
    - [X] Train a single model (XGBoost)
    - [X] Track params/metrics in MLflow
@@ -20,13 +19,13 @@
      - [X] Use `mlflow.set_tag` instead of `set_logged_model_tags`
      - [X] Signature + input_example use `X_train.head(50)`
 
-** M3 Explainability [0%]
-   - [ ] Integrate SHAP
+** M3 Explainability [50%]
+   - [X] Integrate SHAP
+   - [X] Log SHAP summary beeswarm
+   - [X] Use `feature_names.json` for readable labels
    - [ ] Compute values on Val/Test sample
    - [ ] Log global importance plot
-   - [ ] Log SHAP summary beeswarm
    - [ ] Log per-sample top-K attributions
-   - [ ] Use `feature_names.json` for readable labels
 
 ** M4 Serving [0%]
    - [ ] Inference script (`infer.py`)
@@ -50,6 +49,7 @@
      - [ ] SHAP plots logged in MLflow
      - [ ] Optional: calibration curves
 
+** M6 Add CI/CD [0%]
 * Project overview
 ** Scope & Success Criteria
 

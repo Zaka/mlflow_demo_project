@@ -27,6 +27,7 @@ from xgboost.callback import EarlyStopping
 
 from lightgbm import LGBMClassifier, early_stopping
 
+import shap
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
@@ -102,6 +103,65 @@ def log_conf_matrix_figs(y_test, y_pred, labels, mlflow):
         },
         "artifacts/confusion_matrix.json",
     )
+
+def log_shap_summary_plot(mlflow, X_test, explanation, feature_names):
+    plt.figure()  # start a fresh figure so it doesn't collide with other matplotlib stuff
+    shap.summary_plot(
+        explanation.values,
+        X_test,
+        feature_names=feature_names,
+        show=False
+    )
+    plt.tight_layout()
+
+    mlflow.log_figure(plt.gcf(), "plots/shap_summary.png")
+    plt.close()
+
+def log_shap_waterfall_plot(mlflow, X_test, y_pred, explanation):
+    # pick one row that the model predicted as class 1 (>50K)
+    pos_indices = np.where(y_pred == 1)[0]
+    if len(pos_indices) == 0:
+        # fallback: just take the first row
+        idx = 0
+    else:
+        idx = int(pos_indices[0])
+    
+    single_expl = explanation[idx]
+
+    plt.figure()
+    shap.plots.waterfall(single_expl, show=False)
+    plt.tight_layout()
+    mlflow.log_figure(plt.gcf(), f"plots/shap_waterfall_idx_{idx}.png")
+    plt.close()
+
+def log_shap_values_and_metadata(mlflow, explanation, feature_names):
+    # Save SHAP data for later inspection
+    np.save("shap_values.npy", explanation.values)
+    np.save("shap_base_values.npy", explanation.base_values)
+
+    # feature_names is already a Python list
+    import json
+    with open("shap_feature_names.json", "w") as f:
+        json.dump(feature_names, f)
+
+    # Log them as MLflow artifacts
+    mlflow.log_artifact("shap_values.npy")
+    mlflow.log_artifact("shap_base_values.npy")
+    mlflow.log_artifact("shap_feature_names.json")
+
+def log_shap_dependence_plot(mlflow, explanation, X_test, feature_names):
+    for feature_to_plot in ["hours-per-week", "education_Bachelors", "age"]:
+        plt.figure()
+        shap.dependence_plot(
+            feature_to_plot,
+            explanation.values,
+            X_test,
+            feature_names=feature_names,
+            show=False
+        )
+        plt.tight_layout()
+        mlflow.log_figure(plt.gcf(), f"plots/shap_dependence_{feature_to_plot}.png")
+        plt.close()
 
 
 def main():
@@ -259,10 +319,10 @@ def main():
 
     y_pred = booster_refit.predict(X_test_tr)
     y_proba = booster_refit.predict_proba(X_test_tr)[:, 1]
-    # y_pred = booster.predict(X_test_tr)
-    # y_proba = booster.predict_proba(X_test_tr)[:, 1]
-    # y_pred = clf.predict(X_test_tr)
-    # y_proba = clf.predict_proba(X_test_tr)[:, 1]
+    
+    explainer = shap.TreeExplainer(booster_refit)
+    explanation = explainer(X_test_tr)
+
 
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
@@ -284,6 +344,16 @@ def main():
     # Start an MLflow run
     with mlflow.start_run() as run:
         log_conf_matrix_figs(y_test, y_pred, labels, mlflow)
+
+        feature_names = [
+            f.replace("num__", "").replace("cat__", "")
+            for f in clf.named_steps["preprocessor"].get_feature_names_out()
+        ]
+
+        log_shap_summary_plot(mlflow, X_test_tr, explanation, feature_names)
+        log_shap_dependence_plot(mlflow, explanation, X_test_tr, feature_names)
+        log_shap_waterfall_plot(mlflow, X_test_tr, y_pred, explanation)
+        log_shap_values_and_metadata(mlflow, explanation, feature_names)
 
         if model_cfg["type"] == "adult-income-xgboost":
             mlflow.log_params(
@@ -367,7 +437,6 @@ def main():
 
         with open("README.txt", "r") as f:
             mlflow.log_text(f.read(), "README.txt")
-
 
 if __name__ == "__main__":
     main()
