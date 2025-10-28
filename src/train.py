@@ -4,7 +4,7 @@ import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+import json
 import yaml
 
 import sklearn
@@ -104,20 +104,24 @@ def log_conf_matrix_figs(y_test, y_pred, labels, mlflow):
         "artifacts/confusion_matrix.json",
     )
 
-def log_shap_summary_plot(mlflow, X_test, explanation, feature_names):
+def log_shap_summary_plot(mlflow, X, explanation, feature_names, test_partition=True):
     plt.figure()  # start a fresh figure so it doesn't collide with other matplotlib stuff
     shap.summary_plot(
         explanation.values,
-        X_test,
+        X,
         feature_names=feature_names,
         show=False
     )
     plt.tight_layout()
 
-    mlflow.log_figure(plt.gcf(), "plots/shap_summary.png")
+    if test_partition:
+        mlflow.log_figure(plt.gcf(), "plots/shap_summary_test.png")
+    else:
+        mlflow.log_figure(plt.gcf(), "plots/shap_summary_val.png")
+
     plt.close()
 
-def log_shap_waterfall_plot(mlflow, X_test, y_pred, explanation):
+def log_shap_waterfall_plot(mlflow, y_pred, explanation):
     # pick one row that the model predicted as class 1 (>50K)
     pos_indices = np.where(y_pred == 1)[0]
     if len(pos_indices) == 0:
@@ -134,28 +138,58 @@ def log_shap_waterfall_plot(mlflow, X_test, y_pred, explanation):
     mlflow.log_figure(plt.gcf(), f"plots/shap_waterfall_idx_{idx}.png")
     plt.close()
 
+def log_topk_attributions_table(mlflow, explanation, X, y_pred, k=10):
+    pos_indices = np.where(y_pred == 1)[0]
+    if len(pos_indices) == 0:
+        idx = 0
+    else:
+        idx = int(pos_indices[0])
+
+    shap_row = explanation.values[idx]
+    sample_features = X.iloc[idx]
+    names = sample_features.index.tolist()
+
+    # sort features by absolute impact
+    order = np.argsort(np.abs(shap_row))[::-1][:k]
+
+    topk = []
+    for j in order:
+        topk.append({
+            "feature": names[j],
+            "value": sample_features.iloc[j],
+            "shap_value": float(shap_row[j])
+        })
+
+    # log as JSON artifact
+    mlflow.log_dict(
+        {
+            "sample_index": int(idx),
+            "predicted_class": int(y_pred[idx]),
+            "topk": topk,
+        },
+        "artifacts/topk_attributions_sample.json"
+    )
+
 def log_shap_values_and_metadata(mlflow, explanation, feature_names):
     # Save SHAP data for later inspection
     np.save("shap_values.npy", explanation.values)
     np.save("shap_base_values.npy", explanation.base_values)
 
-    # feature_names is already a Python list
-    import json
     with open("shap_feature_names.json", "w") as f:
         json.dump(feature_names, f)
 
     # Log them as MLflow artifacts
-    mlflow.log_artifact("shap_values.npy")
-    mlflow.log_artifact("shap_base_values.npy")
-    mlflow.log_artifact("shap_feature_names.json")
+    mlflow.log_artifact("shap_values.npy", "artifacts")
+    mlflow.log_artifact("shap_base_values.npy", "artifacts")
+    mlflow.log_artifact("shap_feature_names.json", "artifacts")
 
-def log_shap_dependence_plot(mlflow, explanation, X_test, feature_names):
+def log_shap_dependence_plot(mlflow, explanation, X, feature_names):
     for feature_to_plot in ["hours-per-week", "education_Bachelors", "age"]:
         plt.figure()
         shap.dependence_plot(
             feature_to_plot,
             explanation.values,
-            X_test,
+            X,
             feature_names=feature_names,
             show=False
         )
@@ -163,6 +197,18 @@ def log_shap_dependence_plot(mlflow, explanation, X_test, feature_names):
         mlflow.log_figure(plt.gcf(), f"plots/shap_dependence_{feature_to_plot}.png")
         plt.close()
 
+def log_shap_global_importance_bar(mlflow, X, explanation, feature_names):
+    plt.figure()
+    shap.summary_plot(
+        explanation.values,
+        X,
+        feature_names=feature_names,
+        plot_type="bar",
+        show=False
+    )
+    plt.tight_layout()
+    mlflow.log_figure(plt.gcf(), "plots/shap_global_importance_bar.png")
+    plt.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -226,17 +272,17 @@ def main():
     )
 
     # In a scikit-learn Pipeline, xgb__eval_set is passed straight to
-    # XGBClassifier.fit without going through your preprocessor.
+    # XGBClassifier.fit without going through the preprocessor.
 
-    # So your model trains on OHE-transformed features but validates
+    # So the model trains on OHE-transformed features but validates
     # on raw features → mismatch → headaches.
 
-    # The clean pattern is:
+    # The clean pattern to:
     # - fit the preprocessor first
     # - transform train/val
     # - then fit XGBoost with callbacks.
     # - After training, wrap the fitted pieces back into a pipeline so
-    # your saved model still does end-to-end preprocessing.
+    # the saved model still does end-to-end preprocessing.
 
     preprocessor.set_output(transform="pandas")
     preprocessor.fit(X_train, y_train)
@@ -321,9 +367,9 @@ def main():
     y_proba = booster_refit.predict_proba(X_test_tr)[:, 1]
     
     explainer = shap.TreeExplainer(booster_refit)
-    explanation = explainer(X_test_tr)
-
-
+    explanation_val = explainer(X_val_tr)
+    explanation_test = explainer(X_test_tr)
+    
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
     recall = recall_score(y_test, y_pred)
@@ -350,10 +396,14 @@ def main():
             for f in clf.named_steps["preprocessor"].get_feature_names_out()
         ]
 
-        log_shap_summary_plot(mlflow, X_test_tr, explanation, feature_names)
-        log_shap_dependence_plot(mlflow, explanation, X_test_tr, feature_names)
-        log_shap_waterfall_plot(mlflow, X_test_tr, y_pred, explanation)
-        log_shap_values_and_metadata(mlflow, explanation, feature_names)
+        log_shap_summary_plot(mlflow, X_val_tr, explanation_val, feature_names, 
+                            test_partition=False)
+        log_shap_summary_plot(mlflow, X_test_tr, explanation_test, feature_names)
+        log_shap_dependence_plot(mlflow, explanation_test, X_test_tr, feature_names)
+        log_shap_waterfall_plot(mlflow, y_pred, explanation_test)
+        log_shap_global_importance_bar(mlflow, X_test_tr, explanation_test, feature_names)
+        log_shap_values_and_metadata(mlflow, explanation_test, feature_names)
+        log_topk_attributions_table(mlflow, explanation_test, X_test_tr, y_pred)
 
         if model_cfg["type"] == "adult-income-xgboost":
             mlflow.log_params(

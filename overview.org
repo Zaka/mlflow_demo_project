@@ -19,13 +19,13 @@
      - [X] Use `mlflow.set_tag` instead of `set_logged_model_tags`
      - [X] Signature + input_example use `X_train.head(50)`
 
-** M3 Explainability [50%]
+** M3 Explainability [100%]
    - [X] Integrate SHAP
    - [X] Log SHAP summary beeswarm
    - [X] Use `feature_names.json` for readable labels
-   - [ ] Compute values on Val/Test sample
-   - [ ] Log global importance plot
-   - [ ] Log per-sample top-K attributions
+   - [X] Compute values on Val/Test sample
+   - [X] Log global importance plot
+   - [X] Log per-sample top-K attributions
 
 ** M4 Serving [0%]
    - [ ] Inference script (`infer.py`)
