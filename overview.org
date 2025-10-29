@@ -1,55 +1,5 @@
-# TILTLE: Project: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
+# TILTLE: Overview: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
 
-* Milestones for Adult Income Project
-** M1 Baseline training + tracking [100%]
-   - [X] Train a single model (XGBoost)
-   - [X] Track params/metrics in MLflow
-   - [X] Evaluate on Test
-   - [X] Log artifacts (confusion matrix, config, feature names)
-
-** M2 Multi-model comparison + reproducibility [100%]
-   - [X] Add LightGBM training path
-   - [X] Global seeding (Python, NumPy, XGB/LGBM) from YAML
-   - [X] Early stopping cleanup (only one mechanism per booster)
-   - [X] Final refit on Train+Val after early stopping (optional)
-   - [X] Confusion matrix uses explicit labels [0,1]
-   - [X] MLflow logging hygiene
-     - [X] Params only scalars/strings
-     - [X] Registry names normalized (`adult-income-xgboost`, `adult-income-lightgbm`)
-     - [X] Use `mlflow.set_tag` instead of `set_logged_model_tags`
-     - [X] Signature + input_example use `X_train.head(50)`
-
-** M3 Explainability [100%]
-   - [X] Integrate SHAP
-   - [X] Log SHAP summary beeswarm
-   - [X] Use `feature_names.json` for readable labels
-   - [X] Compute values on Val/Test sample
-   - [X] Log global importance plot
-   - [X] Log per-sample top-K attributions
-
-** M4 Serving [0%]
-   - [ ] Inference script (`infer.py`)
-     - [ ] Load latest Production model from registry
-     - [ ] Accept DataFrame or JSON snippet
-     - [ ] Return predicted probs + labels
-   - [ ] FastAPI service
-     - [ ] `/predict`: JSON list in, probs + top-K SHAP out
-     - [ ] `/model-info`: return model name, version, run_id
-     - [ ] `/health`: readiness check
-     - [ ] Input schema validated with Pydantic
-     - [ ] Model loaded once at startup
-
-** M5 Developer experience & polish [0%]
-   - [ ] Multiple configs: `xgboost`, `lightgbm`, `debug` (optional: CatBoost)
-   - [ ] README updates
-     - [ ] Document preprocessing decisions
-     - [ ] Add MLflow screenshots
-     - [ ] Add FastAPI `curl` example
-   - [ ] Artifacts
-     - [ ] SHAP plots logged in MLflow
-     - [ ] Optional: calibration curves
-
-** M6 Add CI/CD [0%]
 * Project overview
 ** Scope & Success Criteria
 

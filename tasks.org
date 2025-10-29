@@ -1,0 +1,97 @@
+# TILTLE: Project: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
+
+* Milestones for Adult Income Project [50%]
+** DONE M1 Baseline training + tracking [100%]
+   - [X] Train a single model (XGBoost)
+   - [X] Track params/metrics in MLflow
+   - [X] Evaluate on Test
+   - [X] Log artifacts (confusion matrix, config, feature names)
+
+** DONE M2 Multi-model comparison + reproducibility [100%]
+   - [X] Add LightGBM training path
+   - [X] Global seeding (Python, NumPy, XGB/LGBM) from YAML
+   - [X] Early stopping cleanup (only one mechanism per booster)
+   - [X] Final refit on Train+Val after early stopping (optional)
+   - [X] Confusion matrix uses explicit labels [0,1]
+   - [X] MLflow logging hygiene
+     - [X] Params only scalars/strings
+     - [X] Registry names normalized (`adult-income-xgboost`, `adult-income-lightgbm`)
+     - [X] Use `mlflow.set_tag` instead of `set_logged_model_tags`
+     - [X] Signature + input_example use `X_train.head(50)`
+
+** DONE M3 Explainability [100%]
+   - [X] Integrate SHAP
+   - [X] Log SHAP summary beeswarm
+   - [X] Use `feature_names.json` for readable labels
+   - [X] Compute values on Val/Test sample
+   - [X] Log global importance plot
+   - [X] Log per-sample top-K attributions
+
+** TODO M4 Serving [50%]
+*** Inference script (`infer.py`) [100%]
+
+- [X] Load model by **alias** and audit alias → version/run_id (print mapping)
+- [X] Load frozen version URI `models:/name/{version}` (not alias) for reproducibility
+- [X] Accept single-record JSON via `--prediction_input`
+- [X] Accept batch file input via `--input_path` (CSV/Parquet/JSON)
+- [X] Coerce numeric fields: `age`, `fnlwgt`, `capital-gain`, `capital-loss`, `hours-per-week`
+- [X] Return **probabilities + labels** (stdout JSON)
+- [X] Select positive-class column via classifier `classes_` (don’t assume column 1) :critical:
+- [X] Validate numerics after coercion (fail if any NaN) :critical:
+- [X] Batch output format: list of `{prob_1, label}` (not only first row)
+
+*** FastAPI service (lean MVP) [0%]
+
+- [ ] App startup: resolve alias → version; load `models:/name/{version}` once
+- [ ] Keep handles to pipeline, final estimator, and `classes_`
+- [ ] `GET /health` → `{status:"ok"}`
+- [ ] `GET /model-info` → `{model_name, version, run_id}`
+- [ ] `POST /predict` → list of raw records → list of `{prob_1, label}`
+- [ ] Minimal Pydantic schemas for request/response
+- [ ] Small batch guard (e.g., max 1k rows)
+
+** TODO M5 Developer experience & polish [0%]
+*** CLI & Schema (nice-to-have) [0%]
+
+- [ ] Read `tracking_uri` from YAML (avoid hardcoding) :nice:
+- [ ] Read `feature_names.json` → validate required raw columns; drop extras; reindex :nice:
+- [ ] Support JSON array (inline) and JSONL files :nice:
+- [ ] `--threshold` flag for label derivation :nice:
+- [ ] Structured error messages + non-zero exit codes :nice:
+
+*** API Enhancements [0%]
+
+- [ ] `/predict?explain=true&top_k=3` → per-row SHAP top-K (TreeExplainer) :nice:
+- [ ] Cache background set for SHAP (e.g., ~200 transformed rows) :nice:
+- [ ] Map one-hot back to readable raw features in explanations :nice:
+- [ ] JSONL/Parquet upload support :nice:
+- [ ] Error taxonomy and response models :nice:
+
+*** Docs & Artifacts [0%]
+
+- [ ] README: preprocessing decisions
+- [ ] README: MLflow screenshots
+- [ ] README: FastAPI `curl` example
+- [ ] Ensure SHAP plots visible in MLflow artifacts
+- [ ] Optional: probability calibration curves (Platt/Isotonic)
+
+** TODO M6 Add CI/CD [0%]
+- [ ] Promotion workflow using **aliases** (`production`, `staging`) instead of stages
+- [ ] One-command rollback (keep previous version id noted)
+- [ ] Makefile targets: `serve`, `predict-sample`, `train-xgb`, `train-lgbm`, `explain`, `test`
+- [ ] (Optional) Dockerfile + simple run command
+- [ ] Basic rate limits / request size limits guidance
+
+*** Testing (reference) [0%]
+- [ ] Unit: preprocessing (unknown cats, missing values)
+- [ ] Unit: metrics (thresholding, confusion matrix)
+- [ ] Unit: SHAP outputs dimension & sanity
+- [ ] API: schema validation; happy path & bad inputs
+- [ ] Integration: load Production model & score sample
+- [ ] Smoke: `make serve` + `curl /health` + `curl /predict` returns probs
+
+*** Stretch (after core) [0%]
+- [ ] Add CatBoost baseline
+- [ ] Drift monitors (feature distributions, PSI)
+- [ ] Batch scoring CLI writing predictions + attributions to Parquet
+
