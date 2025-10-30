@@ -1,7 +1,6 @@
 import argparse
 import json
 import yaml
-import numpy as np
 import pandas as pd
 import mlflow
 from mlflow.tracking import MlflowClient

@@ -470,6 +470,9 @@ def main():
         # Infer the model signature
         signature = infer_signature(X_train_sample, clf.predict_proba(X_train_sample))
 
+        print(f"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+        print(f"SKPipeline clf: {clf}")
+
         # Log the model, which inherits the parameters and metric
         model_info = mlflow.sklearn.log_model(
             sk_model=clf,

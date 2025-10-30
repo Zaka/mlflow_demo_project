@@ -1,6 +1,6 @@
 # TILTLE: Project: MLflow + XGBoost/LightGBM, SHAP, FastAPI (Adult Income)
 
-* Milestones for Adult Income Project [50%]
+* Milestones for Adult Income Project [66%]
 ** DONE M1 Baseline training + tracking [100%]
    - [X] Train a single model (XGBoost)
    - [X] Track params/metrics in MLflow
@@ -27,8 +27,8 @@
    - [X] Log global importance plot
    - [X] Log per-sample top-K attributions
 
-** TODO M4 Serving [50%]
-*** Inference script (`infer.py`) [100%]
+** DONE M4 Serving [100%]
+*** DONE Inference script (`infer.py`) [100%]
 
 - [X] Load model by **alias** and audit alias → version/run_id (print mapping)
 - [X] Load frozen version URI `models:/name/{version}` (not alias) for reproducibility
@@ -40,15 +40,15 @@
 - [X] Validate numerics after coercion (fail if any NaN) :critical:
 - [X] Batch output format: list of `{prob_1, label}` (not only first row)
 
-*** FastAPI service (lean MVP) [0%]
+*** DONE FastAPI service (lean MVP) [100%]
 
-- [ ] App startup: resolve alias → version; load `models:/name/{version}` once
-- [ ] Keep handles to pipeline, final estimator, and `classes_`
-- [ ] `GET /health` → `{status:"ok"}`
-- [ ] `GET /model-info` → `{model_name, version, run_id}`
-- [ ] `POST /predict` → list of raw records → list of `{prob_1, label}`
-- [ ] Minimal Pydantic schemas for request/response
-- [ ] Small batch guard (e.g., max 1k rows)
+- [X] App startup: resolve alias → version; load `models:/name/{version}` once
+- [X] Keep handles to pipeline, final estimator, and `classes_`
+- [X] `GET /health` → `{status:"ok"}`
+- [X] `GET /model-info` → `{model_name, version, run_id}`
+- [X] `POST /predict` → list of raw records → list of `{prob_1, label}`
+- [X] Minimal Pydantic schemas for request/response
+- [X] Small batch guard (e.g., max 1k rows)
 
 ** TODO M5 Developer experience & polish [0%]
 *** CLI & Schema (nice-to-have) [0%]
