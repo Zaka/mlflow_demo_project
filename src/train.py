@@ -1,4 +1,3 @@
-import sys
 import argparse
 import os
 import random
@@ -14,7 +13,6 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline as SKPipeline
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
-# from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score
@@ -597,7 +595,7 @@ def main():
                 die(30, "Failed inferring signature.", str(e), extra=debug)
 
             # Log the model, which inherits the parameters and metric
-            model_info = mlflow.sklearn.log_model(
+            mlflow.sklearn.log_model(
                 sk_model=clf,
                 name="adult_income",
                 signature=signature,

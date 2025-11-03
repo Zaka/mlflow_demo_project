@@ -114,4 +114,4 @@ def predict(req: PredictRequest) -> List[PredictItem]:
     probs = app.state.model.predict_proba(df)
     idx1 = app.state.class_index[1]
 
-    return [{"prob_1": float(p[idx1]), "label": int(l)} for p, l in zip(probs, labels)]
+    return [{"prob_1": float(p[idx1]), "label": int(label)} for p, label in zip(probs, labels)]

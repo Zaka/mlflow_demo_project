@@ -50,8 +50,8 @@
 - [X] Minimal Pydantic schemas for request/response
 - [X] Small batch guard (e.g., max 1k rows)
 *
-** TODO M5 Developer experience & polish [0%]
-**** CLI & Schema (nice-to-have) [100%]
+** TODO M5 Developer experience & polish [33%]
+**** DONE CLI & Schema (nice-to-have) [100%]
 
 - [X] Read `tracking_uri` from YAML (avoid hardcoding) :nice:
 - [X] Read `feature_names.json` → validate required raw columns; drop extras; reindex :nice:
@@ -59,7 +59,7 @@
 - [X] `--threshold` flag for label derivation :nice:
 - [X] Structured error messages + non-zero exit codes :nice:
 
-**** API Enhancements [0%]
+**** TODO API Enhancements [0%]
 
 - [ ] `/predict?explain=true&top_k=3` → per-row SHAP top-K (TreeExplainer) :nice:
 - [ ] Cache background set for SHAP (e.g., ~200 transformed rows) :nice:
@@ -67,7 +67,7 @@
 - [ ] JSONL/Parquet upload support :nice:
 - [ ] Error taxonomy and response models :nice:
 
-**** Docs & Artifacts [0%]
+**** TODO Docs & Artifacts [0%]
 
 - [ ] README: preprocessing decisions
 - [ ] README: MLflow screenshots
@@ -76,13 +76,14 @@
 - [ ] Optional: probability calibration curves (Platt/Isotonic)
 
 ** TODO M6 Add CI/CD [0%]
+*** TODO Workflows and containers [0%]
 - [ ] Promotion workflow using **aliases** (`production`, `staging`) instead of stages
 - [ ] One-command rollback (keep previous version id noted)
 - [ ] Makefile targets: `serve`, `predict-sample`, `train-xgb`, `train-lgbm`, `explain`, `test`
 - [ ] (Optional) Dockerfile + simple run command
 - [ ] Basic rate limits / request size limits guidance
 
-*** Testing (reference) [0%]
+*** TODO Testing (reference) [0%]
 - [ ] Unit: preprocessing (unknown cats, missing values)
 - [ ] Unit: metrics (thresholding, confusion matrix)
 - [ ] Unit: SHAP outputs dimension & sanity
@@ -90,7 +91,7 @@
 - [ ] Integration: load Production model & score sample
 - [ ] Smoke: `make serve` + `curl /health` + `curl /predict` returns probs
 
-*** Stretch (after core) [0%]
+*** TODO Stretch (after core) [0%]
 - [ ] Add CatBoost baseline
 - [ ] Drift monitors (feature distributions, PSI)
 - [ ] Batch scoring CLI writing predictions + attributions to Parquet

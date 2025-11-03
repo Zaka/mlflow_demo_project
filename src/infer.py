@@ -124,9 +124,9 @@ def main():
 
     output = []
 
-    for p, l in zip(probs, labels):
+    for p, label in zip(probs, labels):
         prob_1 = float(p[label_1_idx])
-        output.append({"prob_1": prob_1, "label": int(l)})
+        output.append({"prob_1": prob_1, "label": int(label)})
 
     print(json.dumps(output, indent=2))
 
