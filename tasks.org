@@ -49,17 +49,17 @@
 - [X] `POST /predict` → list of raw records → list of `{prob_1, label}`
 - [X] Minimal Pydantic schemas for request/response
 - [X] Small batch guard (e.g., max 1k rows)
-
+*
 ** TODO M5 Developer experience & polish [0%]
-*** CLI & Schema (nice-to-have) [0%]
+**** CLI & Schema (nice-to-have) [100%]
 
-- [ ] Read `tracking_uri` from YAML (avoid hardcoding) :nice:
-- [ ] Read `feature_names.json` → validate required raw columns; drop extras; reindex :nice:
-- [ ] Support JSON array (inline) and JSONL files :nice:
-- [ ] `--threshold` flag for label derivation :nice:
-- [ ] Structured error messages + non-zero exit codes :nice:
+- [X] Read `tracking_uri` from YAML (avoid hardcoding) :nice:
+- [X] Read `feature_names.json` → validate required raw columns; drop extras; reindex :nice:
+- [X] Support JSON array (inline) and JSONL files :nice:
+- [X] `--threshold` flag for label derivation :nice:
+- [X] Structured error messages + non-zero exit codes :nice:
 
-*** API Enhancements [0%]
+**** API Enhancements [0%]
 
 - [ ] `/predict?explain=true&top_k=3` → per-row SHAP top-K (TreeExplainer) :nice:
 - [ ] Cache background set for SHAP (e.g., ~200 transformed rows) :nice:
@@ -67,7 +67,7 @@
 - [ ] JSONL/Parquet upload support :nice:
 - [ ] Error taxonomy and response models :nice:
 
-*** Docs & Artifacts [0%]
+**** Docs & Artifacts [0%]
 
 - [ ] README: preprocessing decisions
 - [ ] README: MLflow screenshots
@@ -94,4 +94,3 @@
 - [ ] Add CatBoost baseline
 - [ ] Drift monitors (feature distributions, PSI)
 - [ ] Batch scoring CLI writing predictions + attributions to Parquet
-

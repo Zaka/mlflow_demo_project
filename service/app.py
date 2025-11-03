@@ -1,22 +1,27 @@
 import os
 import json
+import tempfile
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 import pandas as pd
 import mlflow
+import yaml
 from mlflow.tracking import MlflowClient
 from fastapi import FastAPI, HTTPException
 from service.schemas import PredictRequest, PredictItem, ModelInfo
 
+# Config (env vars with sensible defaults)
+with open("configs/config_xgboost.yaml", "r") as f:
+    cfg = yaml.safe_load(f)
 
-# --- Config (env vars with sensible defaults) ---
-TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:8082")
+TRACKING_URI = cfg["mlflow"]["tracking_uri"]
 MODEL_NAME = os.getenv("MODEL_NAME", "adult-income-xgboost")
 MODEL_ALIAS = os.getenv("MODEL_ALIAS", "production")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     mlflow.set_tracking_uri(TRACKING_URI)
     client = MlflowClient()
 
@@ -35,6 +40,18 @@ async def lifespan(app: FastAPI):
     app.state.model_alias = MODEL_ALIAS
     app.state.model_version = mv.version
     app.state.model_run_id = mv.run_id
+
+    tmpdir = tempfile.mkdtemp()
+    local = client.download_artifacts(
+        app.state.model_run_id, "feature_names.json", tmpdir
+    )
+    with open(local, "r") as f:
+        feat_spec = json.load(f)
+    
+    target = feat_spec.get("target", "class")
+
+    app.state.required_raw = [c for c in feat_spec["raw_columns"] if c != target]
+
     app.state.model_source = mv.source
     app.state.final_estimator = pipeline[-1]  # Classifier
     app.state.class_index = {
@@ -52,7 +69,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Adult Income Service", lifespan=lifespan)
 
 
-# Minimal endpoints to verify startup state ---
+# Minimal endpoints to verify startup state
 @app.get("/health")
 def health() -> Dict[str, Any]:
     return {"status": "ok", "model_loaded": hasattr(app.state, "model")}
@@ -75,6 +92,23 @@ def model_info() -> ModelInfo:
 @app.post("/predict", response_model=List[PredictItem])
 def predict(req: PredictRequest) -> List[PredictItem]:
     df = pd.DataFrame([r.model_dump(by_alias=True) for r in req.records])
+
+    missing = [c for c in app.state.required_raw if c not in df.columns]
+
+    if missing:
+        raise HTTPException(
+            status_code=400, detail=f"Missing required columns: {missing}"
+        )
+
+    df = df[app.state.required_raw]
+
+    num_cols = ["age", "fnlwgt", "capital-gain", "capital-loss", "hours-per-week"]
+    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
+
+    if df[num_cols].isna().any().any():
+        raise HTTPException(
+            status_code=400, detail="Numeric fields contain NaN after coercion."
+        )
 
     labels = app.state.model.predict(df)
     probs = app.state.model.predict_proba(df)
